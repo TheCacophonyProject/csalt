@@ -18,14 +18,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/gofrs/flock"
-	"github.com/spf13/afero"
-	"gopkg.in/yaml.v2"
 	"log"
 	"os"
 	"os/user"
 	"path"
 	"time"
+
+	"github.com/gofrs/flock"
+	"github.com/spf13/afero"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -56,7 +57,7 @@ func NewConfig() (*Config, error) {
 	conf := &Config{filePath: filePath}
 	tokenConfig, err := readTokenConfig()
 	if err != nil {
-		fmt.Errorf("error loading token%v", err)
+		fmt.Printf("error loading token%v", err)
 	}
 
 	if exists, err := afero.Exists(Fs, filePath); err != nil {
