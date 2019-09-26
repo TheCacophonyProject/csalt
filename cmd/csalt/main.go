@@ -167,13 +167,11 @@ func getSaltPrefix(serverURL string) string {
 func saltDeviceCommand(serverURL string, devices []userapi.Device) string {
 	var saltDevices bytes.Buffer
 	idPrefix := getSaltPrefix(serverURL)
-	saltDevices.WriteString("\"")
 	spacer := ""
 	for _, device := range devices {
 		saltDevices.WriteString(spacer + idPrefix + "-" + strconv.Itoa(device.SaltId))
 		spacer = " "
 	}
-	saltDevices.WriteString("\"")
 	return saltDevices.String()
 }
 
@@ -183,9 +181,9 @@ func runSaltForDevices(serverURL string, devices []userapi.Device, argCommands [
 		return errors.New("No valid devices found")
 	}
 	ids := saltDeviceCommand(serverURL, devices)
-	commands := make([]string, 2, 6)
+	commands := make([]string, 0, 6)
 	if len(devices) > 1 {
-		commands[0] = "-L"
+		commands = append(commands, "-L")
 	}
 	commands = append(commands, ids)
 	commands = append(commands, argCommands...)
