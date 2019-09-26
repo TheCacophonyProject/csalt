@@ -21,7 +21,7 @@ If only 1 parameter is supplied this will run directly on salt
 
 ## Examples
 
-`csalt "group1 gp:group2" test.ping`
+`csalt "group1 group2:gp" test.ping`
 
 Will run test.ping on all devices in group1 and on device gp in group2.
 If multiple devices around found `salt -L` will be run
