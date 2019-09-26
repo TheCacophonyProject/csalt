@@ -36,6 +36,8 @@ const (
 	maxPasswordAttempts = 3
 )
 
+var debug = false
+
 type DeviceQuery struct {
 	devices []userapi.Device
 	groups  []string
@@ -80,6 +82,7 @@ func (devQ *DeviceQuery) UnmarshalText(b []byte) error {
 type Args struct {
 	DeviceInfo DeviceQuery `arg:"positional"`
 	Commands   []string    `arg:"positional"`
+	Debug      bool        `arg:"-d" help:"debug"`
 }
 
 func procArgs() Args {
@@ -150,7 +153,7 @@ func getSaltPrefix(serverURL string) string {
 	idPrefix := "pi"
 	url, err := url.Parse(serverURL)
 	if err != nil {
-		fmt.Printf("Error parsing serverURL %v", err)
+		fmt.Printf("Error parsing serverURL %v\n", err)
 		return idPrefix
 	}
 	if url.Host == userapi.TestAPIHost {
@@ -182,7 +185,7 @@ func runSaltForDevices(serverURL string, devices []userapi.Device, argCommands [
 	ids := saltDeviceCommand(serverURL, devices)
 	commands := make([]string, 2, 6)
 	if len(devices) > 1 {
-		commands = append(commands, "-L")
+		commands[0] = "-L"
 	}
 	commands = append(commands, ids)
 	commands = append(commands, argCommands...)
@@ -191,7 +194,11 @@ func runSaltForDevices(serverURL string, devices []userapi.Device, argCommands [
 
 // runSalt with sudo on supplied arguments
 func runSalt(commands ...string) error {
+
 	commands = append([]string{"salt"}, commands...)
+	if debug {
+		fmt.Printf("sudo %v\n", strings.Join(commands, " "))
+	}
 	cmd := exec.Command("sudo", commands...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -202,7 +209,7 @@ func runSalt(commands ...string) error {
 
 func runMain() error {
 	args := procArgs()
-
+	debug = args.Debug
 	if len(args.Commands) == 0 {
 		if args.DeviceInfo.RawQuery() {
 			return runSalt(args.DeviceInfo.rawArg)
@@ -222,6 +229,7 @@ func runMain() error {
 	}
 
 	api := userapi.New(config)
+	api.Debug = debug
 	if !api.HasToken() {
 		err = authenticateUser(api)
 		if err != nil {

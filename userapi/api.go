@@ -45,6 +45,7 @@ type CacophonyUserAPI struct {
 	serverURL     string
 	token         string
 	authenticated bool
+	Debug         bool
 }
 
 // joinURL creates an absolute URL with supplied baseURL, and all paths
@@ -118,6 +119,9 @@ func (api *CacophonyUserAPI) Authenticate(password string) error {
 
 	if err != nil {
 		return err
+	}
+	if api.Debug {
+		fmt.Printf("Authenticate %v for user %v\n", api.authURL(), api.username)
 	}
 	postResp, err := api.httpClient.Post(
 		api.authURL(),
@@ -205,6 +209,10 @@ func (api *CacophonyUserAPI) TranslateNames(groups []string, devices []Device) (
 		q.Add("devices", string(json))
 	}
 	req.URL.RawQuery = q.Encode()
+	if api.Debug {
+		fmt.Printf("TranslateNames %v\n", q)
+	}
+
 	resp, err := api.httpClient.Do(req)
 	if err != nil {
 		return nil, err
