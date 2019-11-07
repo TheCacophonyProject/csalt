@@ -50,6 +50,7 @@ Once a user has been authenticated a temporary token will be saved to /home/user
 ## Config
 /home/user/cacophony-user.yaml
 
+```
 user-name: Delaley
 server-url: https://api-beta.cacophony.org.nz/
 servers:
@@ -60,6 +61,7 @@ servers:
   alpha:
     url: http://192.168.1.102:1080/
     salt-prefix: alpha
+```
 
 ## Examples
 
@@ -70,19 +72,27 @@ If no server-url is specified, csalt will use the live server.
 live, test,test-prefix and user arguments will override others
 
 With the above config by default
+
 `csalt "group1" -s`
+
 will run on https://api-beta.cacophony.org.nz/ with user-name Delaley
 
 Speccifying local server
+
 `csalt "group1" -s --server local`
+
 will run on http://127.0.0.1:1080/ with user-name roger_test
 
 Sepcifying alpha server the username will fall back to the default
+
 `csalt "group1" -s --server alpha`
+
 will run on http://127.0.0.1:1080/ with user-name Delaley
 
 Sepcifying alpha server the username will fall back to the default
+
 `csalt "group1" -s --server local  --user overloard`
+
 will run on http://127.0.0.1:1080/ with user-name overlord
 
 - DeviceInfo examples:
