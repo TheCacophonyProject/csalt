@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
@@ -34,6 +33,7 @@ import (
 
 const (
 	maxPasswordAttempts = 3
+	testPrefix          = "test"
 )
 
 var debug = false
@@ -58,12 +58,13 @@ func (devQ *DeviceQuery) HasValues() bool {
 // Groups must be in the format groupname(: optional)
 func (devQ *DeviceQuery) UnmarshalText(b []byte) error {
 	devQ.rawArg = string(b)
-	devices := strings.Split(strings.TrimSpace(string(b)), " ")
+	devices := strings.Split(strings.TrimSpace(string(b)), ",")
 
 	for _, devInfo := range devices {
 		pos := strings.Index(devInfo, ":")
 		if pos == 0 {
-			return errors.New("Groupname is required for devices")
+			devQ.devices = append(devQ.devices, userapi.Device{
+				DeviceName: devInfo[1:]})
 		} else if pos >= 0 {
 			if len(devInfo) == pos+1 {
 				devQ.groups = append(devQ.groups, devInfo[:pos])
@@ -82,6 +83,12 @@ func (devQ *DeviceQuery) UnmarshalText(b []byte) error {
 type Args struct {
 	DeviceInfo DeviceQuery `arg:"positional"`
 	Commands   []string    `arg:"positional"`
+	Show       bool        `arg:"-s" help:"Print salt ids for device names"`
+	Server     string      `help:"--server to use, this should be defined in cacophony-user.yaml"`
+	TestServer bool        `arg:"--test" help:"Connect to the test api server"`
+	LiveServer bool        `arg:"--live" help:"Translate device names to salt ids"`
+	TestPrefix bool        `arg:"-t" help:"Add -test to salt names e.g. pi-test-xxx"`
+	User       string      `arg:"--user" help:"Username to authenticate with server"`
 	Debug      bool        `arg:"-d" help:"debug"`
 }
 
@@ -138,10 +145,6 @@ func requestAuthentication(api *userapi.CacophonyUserAPI) error {
 // getMissingConfig from the user and save to config file
 func getMissingConfig(conf *userapi.Config) {
 	fmt.Println("User configuration missing")
-	if conf.ServerURL == "" {
-		fmt.Print("Enter API ServerURL: ")
-		fmt.Scanln(&conf.ServerURL)
-	}
 
 	if conf.UserName == "" {
 		fmt.Print("Enter Username: ")
@@ -149,24 +152,19 @@ func getMissingConfig(conf *userapi.Config) {
 	}
 }
 
-func getSaltPrefix(serverURL string) string {
+func getSaltPrefix(serverURL, saltPrefix string) string {
 	idPrefix := "pi"
-	url, err := url.Parse(serverURL)
-	if err != nil {
-		fmt.Printf("Error parsing serverURL %v\n", err)
-		return idPrefix
-	}
-	if url.Host == userapi.TestAPIHost {
-		idPrefix += "-test"
+	if saltPrefix != "" {
+		idPrefix += "-" + saltPrefix
 	}
 	return idPrefix
 }
 
 // saltDeviceCommand adds a prefix to all supplied devices based on the server and returns
 // a quoted string of device names separated by a space
-func saltDeviceCommand(serverURL string, devices []userapi.Device) string {
+func saltDeviceCommand(serverURL string, devices []userapi.Device, saltPrefix string) string {
 	var saltDevices bytes.Buffer
-	idPrefix := getSaltPrefix(serverURL)
+	idPrefix := getSaltPrefix(serverURL, saltPrefix)
 	spacer := ""
 	for _, device := range devices {
 		saltDevices.WriteString(spacer + idPrefix + "-" + strconv.Itoa(device.SaltId))
@@ -176,11 +174,11 @@ func saltDeviceCommand(serverURL string, devices []userapi.Device) string {
 }
 
 // runSaltForDevices executes salt on supplied devices with argCommands
-func runSaltForDevices(serverURL string, devices []userapi.Device, argCommands []string) error {
+func runSaltForDevices(serverURL string, devices []userapi.Device, argCommands []string, saltPrefix string) error {
 	if len(devices) == 0 {
 		return errors.New("No valid devices found")
 	}
-	ids := saltDeviceCommand(serverURL, devices)
+	ids := saltDeviceCommand(serverURL, devices, saltPrefix)
 	commands := make([]string, 0, 6)
 	if len(devices) > 1 {
 		commands = append(commands, "-L")
@@ -205,28 +203,74 @@ func runSalt(commands ...string) error {
 	return err
 }
 
+func apiFromArgs(args Args) (*userapi.CacophonyUserAPI, string, error) {
+	config, _ := userapi.NewConfig()
+	serverURL := config.ServerURL
+	var saltPrefix, username string
+	if args.LiveServer {
+		serverURL = fmt.Sprintf("https://%v", userapi.LiveAPIHost)
+	} else if args.TestServer {
+		serverURL = fmt.Sprintf("https://%v", userapi.TestAPIHost)
+		saltPrefix = testPrefix
+	} else if args.Server != "" {
+		if server, ok := config.Servers[args.Server]; ok {
+			serverURL = server.Url
+			saltPrefix = server.SaltPrefix
+			username = server.UserName
+		} else {
+			return nil, "", fmt.Errorf("Cannot find %v server info in config", args.Server)
+		}
+	} else if serverURL == "" {
+		serverURL = fmt.Sprintf("https://%v", userapi.LiveAPIHost)
+	}
+
+	if args.TestPrefix {
+		saltPrefix = testPrefix
+	}
+	if args.User != "" {
+		username = args.User
+	} else if username == "" {
+		if config.UserName == "" {
+			getMissingConfig(config)
+			err := config.Save()
+			if err != nil {
+				fmt.Printf("Error saving config %v\n", err)
+			}
+		}
+		username = config.UserName
+	}
+
+	token, err := userapi.ReadTokenFor(username)
+	if args.Debug && err != nil {
+		fmt.Printf("ReadToken error %v\n", err)
+	}
+	api := userapi.New(serverURL, username, token)
+	return api, saltPrefix, nil
+}
+
 func runMain() error {
 	args := procArgs()
 	debug = args.Debug
+
 	if len(args.Commands) == 0 {
 		if args.DeviceInfo.RawQuery() {
-			return runSalt(args.DeviceInfo.rawArg)
+			if !args.Show {
+				return runSalt(args.DeviceInfo.rawArg)
+			}
+		} else {
+			return errors.New("Commands/deviceinfo must be specified")
 		}
-		return errors.New("A command must be specified")
 	} else if !args.DeviceInfo.HasValues() {
 		return runSalt(args.Commands...)
 	}
-
-	config, err := userapi.NewConfig()
+	api, saltPrefix, err := apiFromArgs(args)
 	if err != nil {
-		getMissingConfig(config)
-		err = config.Save()
-		if err != nil {
-			fmt.Printf("Error saving config %v", err)
-		}
+		return err
 	}
 
-	api := userapi.New(config)
+	if args.Debug {
+		fmt.Printf("CSalt using server %v, saltprefix %v, user %v\n", api.ServerURL(), saltPrefix, api.User())
+	}
 	api.Debug = debug
 	if !api.HasToken() {
 		err = authenticateUser(api)
@@ -245,10 +289,16 @@ func runMain() error {
 		devices, err = api.TranslateNames(args.DeviceInfo.groups, args.DeviceInfo.devices)
 
 	}
-
 	if err != nil {
 		return err
 	}
 
-	return runSaltForDevices(api.ServerURL(), devices, args.Commands)
+	if args.Show {
+		ids := saltDeviceCommand(api.ServerURL(), devices, saltPrefix)
+		fmt.Printf("translated salt names %v\n", ids)
+	}
+	if len(args.Commands) > 0 {
+		return runSaltForDevices(api.ServerURL(), devices, args.Commands, saltPrefix)
+	}
+	return nil
 }
