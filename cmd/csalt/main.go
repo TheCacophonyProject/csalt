@@ -74,10 +74,29 @@ func (devQ *DeviceQuery) UnmarshalText(b []byte) error {
 					DeviceName: devInfo[pos+1:]})
 			}
 		} else {
-			devQ.groups = append(devQ.groups, devInfo)
+			devQ.devices = append(devQ.devices, userapi.Device{
+				DeviceName: devInfo})
 		}
 	}
 	return nil
+}
+
+func (Args) Description() string {
+	return `DEVICEINFO:
+1. Device and Groups. A list of Devices or group names to translate separated by a comma
+	- Devices can be in the format of groupname:devicename, or devicename (which will match any group)
+	- Groups will be translated into all devices in this group groupname:
+
+If only 1 parameter is supplied this will run directly on salt
+
+Once a user has been authenticated a temporary token will be saved to /home/user/.cacophony-token
+
+Examples:
+csalt "gp" test.ping
+Will find all devices named gp of any group and run test.ping
+
+csalt "group1:,group2:gp" test.ping
+Will run test.ping on all devices in group1 and on device gp in group2.`
 }
 
 type Args struct {
@@ -86,7 +105,7 @@ type Args struct {
 	Show       bool        `arg:"-s" help:"Print salt ids for device names"`
 	Server     string      `help:"--server to use, this should be defined in cacophony-user.yaml"`
 	TestServer bool        `arg:"--test" help:"Connect to the test api server"`
-	LiveServer bool        `arg:"--live" help:"Translate device names to salt ids"`
+	LiveServer bool        `arg:"--live" help:"Connect to the live api server"`
 	TestPrefix bool        `arg:"-t" help:"Add -test to salt names e.g. pi-test-xxx"`
 	User       string      `arg:"--user" help:"Username to authenticate with server"`
 	Debug      bool        `arg:"-d" help:"debug"`

@@ -41,7 +41,7 @@ optional arguments:
 
 DEVICEINFO:
 1. Device and Groups. A list of Devices or group names to translate separated by a comma
-	- Devices can be in the format of groupname:devicename, or :devicename (which will match any group)
+	- Devices can be in the format of groupname:devicename, or devicename (which will match any group)
 	- Groups will be translated into all devices in this group
 
 If only 1 parameter is supplied this will run directly on salt
@@ -98,12 +98,12 @@ will run on http://127.0.0.1:1080/ with user-name overlord
 
 - DeviceInfo examples:
 
-`csalt "group1,group2:gp" test.ping`
+`csalt "group1:,group2:gp" test.ping`
 
 Will run test.ping on all devices in group1 and on device gp in group2.
 If multiple devices around found `salt -L` will be run
 
-`csalt ":gp" test.ping`
+`csalt "gp" test.ping`
 
 Will find all devices named gp of any group and run test.ping
 
