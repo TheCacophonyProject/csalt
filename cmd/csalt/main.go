@@ -90,11 +90,25 @@ type Args struct {
 	TestPrefix bool        `arg:"-t" help:"Add -test to salt names e.g. pi-test-xxx"`
 	User       string      `arg:"--user" help:"Username to authenticate with server"`
 	Debug      bool        `arg:"-d" help:"debug"`
+	Verbose    bool        `arg:"-v" help:"verbose"`
 }
 
 func procArgs() Args {
 	var args Args
 	arg.MustParse(&args)
+	if args.Verbose {
+		for _, device := range args.DeviceInfo.devices {
+			if device.GroupName == "" {
+				fmt.Printf("Looking for device by name %v\n", device.DeviceName)
+			} else {
+				fmt.Printf("Looking for group:device %v:%v\n", device.GroupName, device.DeviceName)
+			}
+		}
+		for _, group := range args.DeviceInfo.groups {
+			fmt.Printf("Looking for devices in group %v\n", group)
+
+		}
+	}
 	return args
 }
 
@@ -248,6 +262,43 @@ func apiFromArgs(args Args) (*userapi.CacophonyUserAPI, string, error) {
 	return api, saltPrefix, nil
 }
 
+func checkForDuplicates(devices *userapi.DeviceResponse) error {
+	nameMap := make(map[string][]userapi.Device)
+	duplicateNames := make([]string, 0, 1)
+	for _, device := range devices.NameMatches {
+		if _, ok := nameMap[device.DeviceName]; !ok {
+			nameMap[device.DeviceName] = []userapi.Device{device}
+		} else {
+			nameMap[device.DeviceName] = append(nameMap[device.DeviceName], device)
+			duplicateNames = append(duplicateNames, device.DeviceName)
+		}
+	}
+	if len(duplicateNames) > 0 {
+		fmt.Printf("DeviceName Query found %v Duplicate Device please specify group:devicename\n", len(duplicateNames))
+		for _, name := range duplicateNames {
+			fmt.Printf("Device %v matches:\n", name)
+			for _, device := range nameMap[name] {
+				fmt.Printf("%v:%v\n", device.GroupName, device.DeviceName)
+			}
+		}
+		return fmt.Errorf("DeviceName Query found %v Duplicate Device please specify group:devicename\n", len(duplicateNames))
+	}
+	return nil
+}
+
+func showTranslatedDvices(devices *userapi.DeviceResponse) {
+
+	fmt.Println("Translated Name matches:")
+	for _, device := range devices.NameMatches {
+		fmt.Printf("%v:%v saltid: %v\n", device.GroupName, device.DeviceName, device.SaltId)
+	}
+
+	fmt.Println("Translated Devices:")
+	for _, device := range devices.Devices {
+		fmt.Printf("%v:%v saltid: %v\n", device.GroupName, device.DeviceName, device.SaltId)
+	}
+
+}
 func runMain() error {
 	args := procArgs()
 	debug = args.Debug
@@ -279,26 +330,36 @@ func runMain() error {
 		}
 	}
 
-	devices, err := api.TranslateNames(args.DeviceInfo.groups, args.DeviceInfo.devices)
+	devResp, err := api.TranslateNames(args.DeviceInfo.groups, args.DeviceInfo.devices)
 	if userapi.IsAuthenticationError(err) {
 		err = authenticateUser(api)
 
 		if err != nil {
 			return err
 		}
-		devices, err = api.TranslateNames(args.DeviceInfo.groups, args.DeviceInfo.devices)
+		devResp, err = api.TranslateNames(args.DeviceInfo.groups, args.DeviceInfo.devices)
 
 	}
 	if err != nil {
 		return err
 	}
 
+	if args.Verbose {
+		showTranslatedDvices(devResp)
+	}
+
+	err = checkForDuplicates(devResp)
+	if err != nil {
+		return err
+	}
+	allDevices := append(devResp.Devices, devResp.NameMatches...)
+
 	if args.Show {
-		ids := saltDeviceCommand(api.ServerURL(), devices, saltPrefix)
+		ids := saltDeviceCommand(api.ServerURL(), allDevices, saltPrefix)
 		fmt.Printf("translated salt names %v\n", ids)
 	}
 	if len(args.Commands) > 0 {
-		return runSaltForDevices(api.ServerURL(), devices, args.Commands, saltPrefix)
+		return runSaltForDevices(api.ServerURL(), allDevices, args.Commands, saltPrefix)
 	}
 	return nil
 }

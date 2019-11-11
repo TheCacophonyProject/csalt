@@ -96,10 +96,12 @@ type Device struct {
 	DeviceName string `json:"devicename"`
 	SaltId     int    `json:"saltId"`
 }
-type DeviceReponse struct {
-	Messages   []string `json:"messages"`
-	Devices    []Device `json:"devices"`
-	StatusCode int      `json:"statusCode"`
+
+type DeviceResponse struct {
+	Messages    []string `json:"messages"`
+	Devices     []Device `json:"devices"`
+	NameMatches []Device `json:"nameMatches"`
+	StatusCode  int      `json:"statusCode"`
 }
 
 func (api *CacophonyUserAPI) User() string {
@@ -200,7 +202,7 @@ func (api *CacophonyUserAPI) SaveTemporaryToken(ttl string) error {
 	return nil
 }
 
-func (api *CacophonyUserAPI) TranslateNames(groups []string, devices []Device) ([]Device, error) {
+func (api *CacophonyUserAPI) TranslateNames(groups []string, devices []Device) (*DeviceResponse, error) {
 	if api.token == "" {
 		return nil, &Error{
 			message:        "No Token Supplied",
@@ -235,14 +237,14 @@ func (api *CacophonyUserAPI) TranslateNames(groups []string, devices []Device) (
 	if err := handleHTTPResponse(resp); err != nil {
 		return nil, err
 	}
-	var devResp DeviceReponse
+	var devResp DeviceResponse
 	d := json.NewDecoder(resp.Body)
 	if err := d.Decode(&devResp); err != nil {
 		return nil, fmt.Errorf("decode: %v", err)
 	}
 
 	api.authenticated = true
-	return devResp.Devices, nil
+	return &devResp, nil
 }
 
 // newHTTPClient initializes and returns a http.Client with default settings

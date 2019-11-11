@@ -36,6 +36,7 @@ optional arguments:
   --live                Connect to live api server https://api.cacophony.org.nz/
   -t --test-prefix      Append test to salt ids e.g. pi-test-XXX
   -d --debug            Enable debug mode with extra logging
+  -v --verbose          Enables more verbose output
 ```
 
 DEVICEINFO:
