@@ -34,7 +34,7 @@ const (
 	apiBasePath = "/api/v1"
 	authUserURL = "/authenticate_user"
 	TestAPIHost = "api-test.cacophony.org.nz"
-	LiveAPIHost = "api.cacophony.org.nz"
+	ProdAPIHost = "api.cacophony.org.nz"
 
 	ShortTTL  = "short"
 	MediumTTL = "medium"

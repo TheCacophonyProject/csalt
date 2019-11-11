@@ -14,7 +14,7 @@ This project is licensed under the Apache License 2.0
 
 ```
 usage: csalt [-s] [--server SERVER] [--user USER]
-                        [--test] [--live] [-t] [-d]
+                        [--test] [--prod] [-t] [-d] [-v]
                         DEVICEINFO COMMANDS
 
 positional arguments:
@@ -33,7 +33,7 @@ optional arguments:
                             user-name: admin_test
   --user USER           Use this user name to authenticate with, this will be saved to cacophony-user.yaml
   --test                Connect to test api server https://api-test.cacophony.org.nz/
-  --live                Connect to live api server https://api.cacophony.org.nz/
+  --prod                Connect to prod api server https://api.cacophony.org.nz/
   -t --test-prefix      Append test to salt ids e.g. pi-test-XXX
   -d --debug            Enable debug mode with extra logging
   -v --verbose          Enables more verbose output
@@ -69,8 +69,8 @@ servers:
 - Argument Examples:
 More specific information will override, other information.
 
-If no server-url is specified, csalt will use the live server.
-live, test,test-prefix and user arguments will override others
+If no server-url is specified, csalt will use the prod server.
+prod, test,test-prefix and user arguments will override others
 
 With the above config by default
 

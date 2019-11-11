@@ -105,7 +105,7 @@ type Args struct {
 	Show       bool        `arg:"-s" help:"Print salt ids for device names"`
 	Server     string      `help:"--server to use, this should be defined in cacophony-user.yaml"`
 	TestServer bool        `arg:"--test" help:"Connect to the test api server"`
-	LiveServer bool        `arg:"--live" help:"Connect to the live api server"`
+	ProdServer bool        `arg:"--prod" help:"Connect to the prod api server"`
 	TestPrefix bool        `arg:"-t" help:"Add -test to salt names e.g. pi-test-xxx"`
 	User       string      `arg:"--user" help:"Username to authenticate with server"`
 	Debug      bool        `arg:"-d" help:"debug"`
@@ -240,8 +240,8 @@ func apiFromArgs(args Args) (*userapi.CacophonyUserAPI, string, error) {
 	config, _ := userapi.NewConfig()
 	serverURL := config.ServerURL
 	var saltPrefix, username string
-	if args.LiveServer {
-		serverURL = fmt.Sprintf("https://%v", userapi.LiveAPIHost)
+	if args.ProdServer {
+		serverURL = fmt.Sprintf("https://%v", userapi.ProdAPIHost)
 	} else if args.TestServer {
 		serverURL = fmt.Sprintf("https://%v", userapi.TestAPIHost)
 		saltPrefix = testPrefix
@@ -254,7 +254,7 @@ func apiFromArgs(args Args) (*userapi.CacophonyUserAPI, string, error) {
 			return nil, "", fmt.Errorf("Cannot find %v server info in config", args.Server)
 		}
 	} else if serverURL == "" {
-		serverURL = fmt.Sprintf("https://%v", userapi.LiveAPIHost)
+		serverURL = fmt.Sprintf("https://%v", userapi.ProdAPIHost)
 	}
 
 	if args.TestPrefix {
@@ -293,26 +293,23 @@ func checkForDuplicates(devices *userapi.DeviceResponse) error {
 		}
 	}
 	if len(duplicateNames) > 0 {
-		fmt.Printf("DeviceName Query found %v Duplicate Device please specify group:devicename\n", len(duplicateNames))
 		for _, name := range duplicateNames {
 			fmt.Printf("Device %v matches:\n", name)
 			for _, device := range nameMap[name] {
 				fmt.Printf("%v:%v\n", device.GroupName, device.DeviceName)
 			}
 		}
-		return fmt.Errorf("DeviceName Query found %v Duplicate Device please specify group:devicename\n", len(duplicateNames))
+		return fmt.Errorf("Found %v ambiguous devices. Please specify these devices in full group:devicename form.\n", len(duplicateNames))
 	}
 	return nil
 }
 
-func showTranslatedDvices(devices *userapi.DeviceResponse) {
+func showTranslatedDevices(devices *userapi.DeviceResponse) {
 
-	fmt.Println("Translated Name matches:")
+	fmt.Println("Devices found:")
 	for _, device := range devices.NameMatches {
 		fmt.Printf("%v:%v saltid: %v\n", device.GroupName, device.DeviceName, device.SaltId)
 	}
-
-	fmt.Println("Translated Devices:")
 	for _, device := range devices.Devices {
 		fmt.Printf("%v:%v saltid: %v\n", device.GroupName, device.DeviceName, device.SaltId)
 	}
@@ -364,7 +361,7 @@ func runMain() error {
 	}
 
 	if args.Verbose {
-		showTranslatedDvices(devResp)
+		showTranslatedDevices(devResp)
 	}
 
 	err = checkForDuplicates(devResp)
