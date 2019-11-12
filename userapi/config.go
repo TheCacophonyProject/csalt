@@ -36,10 +36,17 @@ const (
 	lockTimeout    = 5 * time.Second
 )
 
+type Server struct {
+	Url        string `yaml:"url"`
+	SaltPrefix string `yaml:"salt-prefix"`
+	UserName   string `yaml:"user-name"`
+}
+
 type Config struct {
-	ServerURL string `yaml:"server-url"`
-	UserName  string `yaml:"user-name"`
-	token     string
+	ServerURL string             `yaml:"server-url"`
+	UserName  string             `yaml:"user-name"`
+	Servers   map[string]*Server `yaml:"servers"`
+	Token     string             `yaml:"-"`
 	filePath  string
 }
 
@@ -55,10 +62,6 @@ func NewConfig() (*Config, error) {
 	homeDir := userHomeDir()
 	filePath := path.Join(homeDir, userConfig)
 	conf := &Config{filePath: filePath}
-	tokenConfig, err := readTokenConfig()
-	if err != nil {
-		fmt.Printf("error loading token%v", err)
-	}
 
 	if exists, err := afero.Exists(Fs, filePath); err != nil {
 		return conf, err
@@ -66,10 +69,7 @@ func NewConfig() (*Config, error) {
 		return conf, errors.New("user config is missing")
 	}
 
-	err = conf.read()
-	if conf.UserName == tokenConfig.UserName {
-		conf.token = tokenConfig.Token
-	}
+	err := conf.read()
 
 	if err != nil {
 		return conf, err
@@ -126,6 +126,17 @@ type TokenConfig struct {
 	Token    string `yaml:"token"`
 }
 
+func ReadTokenFor(user string) (string, error) {
+	tokenConf, err := readTokenConfig()
+	if err != nil {
+		return "", fmt.Errorf("Error reading token config")
+	}
+	if tokenConf.UserName == user {
+		return tokenConf.Token, nil
+	}
+	return "", fmt.Errorf("No token found for %v", user)
+}
+
 // readTokenConfig acquires a readlock and reads token config
 func readTokenConfig() (*TokenConfig, error) {
 	tokenPath := path.Join(userHomeDir(), tokenFileName)
@@ -139,7 +150,7 @@ func readTokenConfig() (*TokenConfig, error) {
 	return config, err
 }
 
-// readTokenConfig acquires a exlock and saves token config
+// saveTokenConfig acquires a exlock and saves token config
 func saveTokenConfig(token, username string) error {
 	tokenPath := path.Join(userHomeDir(), tokenFileName)
 	lockSafeConfig := NewLockSafeConfig(tokenPath)

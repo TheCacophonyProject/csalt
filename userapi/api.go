@@ -34,9 +34,11 @@ const (
 	apiBasePath = "/api/v1"
 	authUserURL = "/authenticate_user"
 	TestAPIHost = "api-test.cacophony.org.nz"
-	ShortTTL    = "short"
-	MediumTTL   = "medium"
-	LongTTL     = "long"
+	ProdAPIHost = "api.cacophony.org.nz"
+
+	ShortTTL  = "short"
+	MediumTTL = "medium"
+	LongTTL   = "long"
 )
 
 type CacophonyUserAPI struct {
@@ -60,9 +62,19 @@ func joinURL(baseURL string, paths ...string) string {
 	return u.String()
 }
 
-func New(conf *Config) *CacophonyUserAPI {
+func New(serverURL, username, token string) *CacophonyUserAPI {
 	api := &CacophonyUserAPI{
-		token:      conf.token,
+		token:      token,
+		serverURL:  serverURL,
+		username:   username,
+		httpClient: newHTTPClient(),
+	}
+	return api
+}
+
+func NewFromConfig(conf *Config) *CacophonyUserAPI {
+	api := &CacophonyUserAPI{
+		token:      conf.Token,
 		serverURL:  conf.ServerURL,
 		username:   conf.UserName,
 		httpClient: newHTTPClient(),
@@ -73,6 +85,7 @@ func New(conf *Config) *CacophonyUserAPI {
 func (api *CacophonyUserAPI) ServerURL() string {
 	return api.serverURL
 }
+
 func (api *CacophonyUserAPI) authURL() string {
 	return joinURL(api.serverURL, authUserURL)
 
@@ -83,10 +96,12 @@ type Device struct {
 	DeviceName string `json:"devicename"`
 	SaltId     int    `json:"saltId"`
 }
-type DeviceReponse struct {
-	Messages   []string `json:"messages"`
-	Devices    []Device `json:"devices"`
-	StatusCode int      `json:"statusCode"`
+
+type DeviceResponse struct {
+	Messages    []string `json:"messages"`
+	Devices     []Device `json:"devices"`
+	NameMatches []Device `json:"nameMatches"`
+	StatusCode  int      `json:"statusCode"`
 }
 
 func (api *CacophonyUserAPI) User() string {
@@ -182,11 +197,12 @@ func (api *CacophonyUserAPI) SaveTemporaryToken(ttl string) error {
 	if err := d.Decode(&resp); err != nil {
 		return fmt.Errorf("decode: %v", err)
 	}
+
 	err = saveTokenConfig("JWT "+resp.Token, api.username)
 	return nil
 }
 
-func (api *CacophonyUserAPI) TranslateNames(groups []string, devices []Device) ([]Device, error) {
+func (api *CacophonyUserAPI) TranslateNames(groups []string, devices []Device) (*DeviceResponse, error) {
 	if api.token == "" {
 		return nil, &Error{
 			message:        "No Token Supplied",
@@ -210,7 +226,7 @@ func (api *CacophonyUserAPI) TranslateNames(groups []string, devices []Device) (
 	}
 	req.URL.RawQuery = q.Encode()
 	if api.Debug {
-		fmt.Printf("TranslateNames %v\n", q)
+		fmt.Printf("TranslateNames request query:%v\n", q)
 	}
 
 	resp, err := api.httpClient.Do(req)
@@ -221,14 +237,14 @@ func (api *CacophonyUserAPI) TranslateNames(groups []string, devices []Device) (
 	if err := handleHTTPResponse(resp); err != nil {
 		return nil, err
 	}
-	var devResp DeviceReponse
+	var devResp DeviceResponse
 	d := json.NewDecoder(resp.Body)
 	if err := d.Decode(&devResp); err != nil {
 		return nil, fmt.Errorf("decode: %v", err)
 	}
 
 	api.authenticated = true
-	return devResp.Devices, nil
+	return &devResp, nil
 }
 
 // newHTTPClient initializes and returns a http.Client with default settings
