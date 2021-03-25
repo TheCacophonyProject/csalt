@@ -317,6 +317,7 @@ func checkForDuplicates(devices *userapi.DeviceResponse) error {
 	return nil
 }
 
+// readNodeFile of salt and return a map of node to nodegroup name
 func readNodeFile() map[string]string {
 	var nodeYaml map[string]map[string]interface{}
 	nodeFile, err := ioutil.ReadFile(nodeGroupFile)
@@ -328,7 +329,7 @@ func readNodeFile() map[string]string {
 		fmt.Printf("yaml, error %v ", err)
 	}
 
-	nodeGroup := make(map[string]string)
+	nodesToGroup := make(map[string]string)
 	commands := []string{"--preview-target", "-N", "group"}
 	for key, _ := range nodeYaml["nodegroups"] {
 		commands[2] = key
@@ -339,11 +340,11 @@ func readNodeFile() map[string]string {
 		}
 		devices := strings.Split(strings.TrimSpace(output), "\n")
 		for i := 0; i < len(devices); i++ {
-			nodeGroup[strings.TrimSpace(devices[i])[2:]] = key
+			nodesToGroup[strings.TrimSpace(devices[i])[2:]] = key
 		}
 
 	}
-	return nodeGroup
+	return nodesToGroup
 }
 
 func showTranslatedDevices(devices *userapi.DeviceResponse, saltPrefix string) {
