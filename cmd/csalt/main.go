@@ -319,6 +319,7 @@ func checkForDuplicates(devices *userapi.DeviceResponse) error {
 
 // readNodeFile of salt and return a map of node to nodegroup name
 func readNodeFile() map[string]string {
+	//get all the nodegroups 
 	var nodeYaml map[string]map[string]interface{}
 	nodeFile, err := ioutil.ReadFile(nodeGroupFile)
 	if err != nil {
@@ -331,6 +332,8 @@ func readNodeFile() map[string]string {
 
 	nodesToGroup := make(map[string]string)
 	commands := []string{"--preview-target", "-N", "group"}
+	//easiest way to find all pis that belong to a group is to run salt on the
+	//node group with preview-target
 	for key, _ := range nodeYaml["nodegroups"] {
 		commands[2] = key
 		output, err := getSaltOutput(commands...)
