@@ -318,8 +318,8 @@ func checkForDuplicates(devices *userapi.DeviceResponse) error {
 }
 
 // readNodeFile of salt and return a map of node to nodegroup name
-func readNodeFile() map[string]string {
-	//get all the nodegroups 
+func readNodeFile() map[string][]string {
+	//get all the nodegroups
 	var nodeYaml map[string]map[string]interface{}
 	nodeFile, err := ioutil.ReadFile(nodeGroupFile)
 	if err != nil {
@@ -330,7 +330,7 @@ func readNodeFile() map[string]string {
 		fmt.Printf("yaml, error %v ", err)
 	}
 
-	nodesToGroup := make(map[string]string)
+	nodesToGroup := make(map[string][]string)
 	commands := []string{"--preview-target", "-N", "group"}
 	//easiest way to find all pis that belong to a group is to run salt on the
 	//node group with preview-target
@@ -343,9 +343,12 @@ func readNodeFile() map[string]string {
 		}
 		devices := strings.Split(strings.TrimSpace(output), "\n")
 		for i := 0; i < len(devices); i++ {
-			nodesToGroup[strings.TrimSpace(devices[i])[2:]] = key
+			deviceName := strings.TrimSpace(devices[i])[2:]
+			if _, found := nodesToGroup[deviceName]; !found {
+				nodesToGroup[deviceName] = make([]string, 0, 2)
+			}
+			nodesToGroup[deviceName] = append(nodesToGroup[deviceName], key)
 		}
-
 	}
 	return nodesToGroup
 }
@@ -355,15 +358,15 @@ func showTranslatedDevices(devices *userapi.DeviceResponse, saltPrefix string) {
 	noNodeGroup := make([]userapi.Device, 0, 5)
 	fmt.Println("Devices found:")
 	for _, device := range devices.NameMatches {
-		if nodeGroup, found := nodesToGroup[saltPrefix+"-"+strconv.Itoa(device.SaltId)]; found {
-			fmt.Printf("%v:%v saltid: %v nodeGroup %v\n", device.GroupName, device.DeviceName, saltPrefix+"-"+strconv.Itoa(device.SaltId), nodeGroup)
+		if nodeGroups, found := nodesToGroup[saltPrefix+"-"+strconv.Itoa(device.SaltId)]; found {
+			fmt.Printf("%v:%v saltid: %v nodeGroup %v\n", device.GroupName, device.DeviceName, saltPrefix+"-"+strconv.Itoa(device.SaltId), nodeGroups)
 		} else {
 			noNodeGroup = append(noNodeGroup, device)
 		}
 	}
 	for _, device := range devices.Devices {
-		if nodeGroup, found := nodesToGroup[saltPrefix+"-"+strconv.Itoa(device.SaltId)]; found {
-			fmt.Printf("%v:%v saltid: %v nodeGroup %v\n", device.GroupName, device.DeviceName, saltPrefix+"-"+strconv.Itoa(device.SaltId), nodeGroup)
+		if nodeGroups, found := nodesToGroup[saltPrefix+"-"+strconv.Itoa(device.SaltId)]; found {
+			fmt.Printf("%v:%v saltid: %v nodeGroup %v\n", device.GroupName, device.DeviceName, saltPrefix+"-"+strconv.Itoa(device.SaltId), nodeGroups)
 		} else {
 			noNodeGroup = append(noNodeGroup, device)
 		}
