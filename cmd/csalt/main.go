@@ -16,9 +16,9 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/howeyc/gopass"
+	"gopkg.in/yaml.v1"
 
 	"github.com/TheCacophonyProject/csalt/userapi"
 	"github.com/alexflint/go-arg"
@@ -34,6 +35,7 @@ import (
 const (
 	maxPasswordAttempts = 3
 	testPrefix          = "test"
+	nodeGroupFile       = "/etc/salt/master.d/nodegroups.conf"
 )
 
 var debug = false
@@ -195,15 +197,13 @@ func getSaltPrefix(serverURL, saltPrefix string) string {
 
 // saltDeviceCommand adds a prefix to all supplied devices based on the server and returns
 // a quoted string of device names separated by a space
-func saltDeviceCommand(serverURL string, devices []userapi.Device, saltPrefix string) string {
-	var saltDevices bytes.Buffer
+func saltDeviceCommand(serverURL string, devices []userapi.Device, saltPrefix string) []string {
 	idPrefix := getSaltPrefix(serverURL, saltPrefix)
-	spacer := ""
-	for _, device := range devices {
-		saltDevices.WriteString(spacer + idPrefix + "-" + strconv.Itoa(device.SaltId))
-		spacer = " "
+	fullDevice := make([]string, len(devices))
+	for i := 0; i < len(devices); i++ {
+		fullDevice[i] = idPrefix + "-" + strconv.Itoa(devices[i].SaltId)
 	}
-	return saltDevices.String()
+	return fullDevice
 }
 
 // runSaltForDevices executes salt on supplied devices with argCommands
@@ -211,7 +211,7 @@ func runSaltForDevices(serverURL string, devices []userapi.Device, argCommands [
 	if len(devices) == 0 {
 		return errors.New("No valid devices found")
 	}
-	ids := saltDeviceCommand(serverURL, devices, saltPrefix)
+	ids := strings.Join(saltDeviceCommand(serverURL, devices, saltPrefix), " ")
 	commands := make([]string, 0, 6)
 	if len(devices) > 1 {
 		commands = append(commands, "-L")
@@ -219,6 +219,19 @@ func runSaltForDevices(serverURL string, devices []userapi.Device, argCommands [
 	commands = append(commands, ids)
 	commands = append(commands, argCommands...)
 	return runSalt(commands...)
+}
+
+// getSaltOutput with sudo on supplied arguments
+func getSaltOutput(commands ...string) (string, error) {
+	commands = append([]string{"salt"}, commands...)
+	if debug {
+		fmt.Printf("sudo %v\n", strings.Join(commands, " "))
+	}
+	output, err := exec.Command("sudo", commands...).Output()
+	if err != nil {
+		return "", err
+	}
+	return string(output), nil
 }
 
 // runSalt with sudo on supplied arguments
@@ -304,21 +317,72 @@ func checkForDuplicates(devices *userapi.DeviceResponse) error {
 	return nil
 }
 
-func showTranslatedDevices(devices *userapi.DeviceResponse) {
+// readNodeFile of salt and return a map of node to nodegroup name
+func readNodeFile() map[string][]string {
+	//get all the nodegroups
+	var nodeYaml map[string]map[string]interface{}
+	nodeFile, err := ioutil.ReadFile(nodeGroupFile)
+	if err != nil {
+		fmt.Printf("readNodeFile, error %v ", err)
+	}
+	err = yaml.Unmarshal(nodeFile, &nodeYaml)
+	if err != nil {
+		fmt.Printf("yaml, error %v ", err)
+	}
 
+	nodesToGroup := make(map[string][]string)
+	commands := []string{"--preview-target", "-N", "group"}
+	//easiest way to find all pis that belong to a group is to run salt on the
+	//node group with preview-target
+	for key, _ := range nodeYaml["nodegroups"] {
+		commands[2] = key
+		output, err := getSaltOutput(commands...)
+		if err != nil {
+			fmt.Printf("Error getting node targets for %s, err %v\n", key, err)
+			continue
+		}
+		devices := strings.Split(strings.TrimSpace(output), "\n")
+		for i := 0; i < len(devices); i++ {
+			deviceName := strings.TrimSpace(devices[i])[2:]
+			if _, found := nodesToGroup[deviceName]; !found {
+				nodesToGroup[deviceName] = make([]string, 0, 2)
+			}
+			nodesToGroup[deviceName] = append(nodesToGroup[deviceName], key)
+		}
+	}
+	return nodesToGroup
+}
+
+func showTranslatedDevices(devices *userapi.DeviceResponse, saltPrefix string) {
+	nodesToGroup := readNodeFile()
+	noNodeGroup := make([]userapi.Device, 0, 5)
 	fmt.Println("Devices found:")
 	for _, device := range devices.NameMatches {
-		fmt.Printf("%v:%v saltid: %v\n", device.GroupName, device.DeviceName, device.SaltId)
+		if nodeGroups, found := nodesToGroup[saltPrefix+"-"+strconv.Itoa(device.SaltId)]; found {
+			fmt.Printf("%v:%v saltid: %v nodeGroup %v\n", device.GroupName, device.DeviceName, saltPrefix+"-"+strconv.Itoa(device.SaltId), nodeGroups)
+		} else {
+			noNodeGroup = append(noNodeGroup, device)
+		}
 	}
 	for _, device := range devices.Devices {
-		fmt.Printf("%v:%v saltid: %v\n", device.GroupName, device.DeviceName, device.SaltId)
+		if nodeGroups, found := nodesToGroup[saltPrefix+"-"+strconv.Itoa(device.SaltId)]; found {
+			fmt.Printf("%v:%v saltid: %v nodeGroup %v\n", device.GroupName, device.DeviceName, saltPrefix+"-"+strconv.Itoa(device.SaltId), nodeGroups)
+		} else {
+			noNodeGroup = append(noNodeGroup, device)
+		}
+	}
+	if len(noNodeGroup) > 0 {
+		fmt.Println("\nDevices without any node group (Probably stale):")
+	}
+	for _, device := range noNodeGroup {
+		fmt.Printf("%v:%v saltid: %v\n", device.GroupName, device.DeviceName, saltPrefix+"-"+strconv.Itoa(device.SaltId))
 	}
 
 }
+
 func runMain() error {
 	args := procArgs()
 	debug = args.Debug
-
 	if len(args.Commands) == 0 {
 		if args.DeviceInfo.RawQuery() {
 			if !args.Show {
@@ -360,19 +424,15 @@ func runMain() error {
 		return err
 	}
 
-	if args.Verbose {
-		showTranslatedDevices(devResp)
-	}
-
 	err = checkForDuplicates(devResp)
 	if err != nil {
 		return err
 	}
 	allDevices := append(devResp.Devices, devResp.NameMatches...)
 
-	if args.Show {
-		ids := saltDeviceCommand(api.ServerURL(), allDevices, saltPrefix)
-		fmt.Printf("translated salt names %v\n", ids)
+	if args.Show || args.Verbose {
+		idPrefix := getSaltPrefix(api.ServerURL(), saltPrefix)
+		showTranslatedDevices(devResp, idPrefix)
 	}
 	if len(args.Commands) > 0 {
 		return runSaltForDevices(api.ServerURL(), allDevices, args.Commands, saltPrefix)
