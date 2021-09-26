@@ -109,6 +109,7 @@ type Args struct {
 	TestServer bool        `arg:"--test" help:"Connect to the test api server"`
 	ProdServer bool        `arg:"--prod" help:"Connect to the prod api server"`
 	TestPrefix bool        `arg:"-t" help:"Add -test to salt names e.g. pi-test-xxx"`
+	NoPrefix     bool      `arg:"--no-prefix" help:"Dont add a prefix even if test"`
 	User       string      `arg:"--user" help:"Username to authenticate with server"`
 	Debug      bool        `arg:"-d" help:"debug"`
 	Verbose    bool        `arg:"-v" help:"verbose"`
@@ -272,6 +273,9 @@ func apiFromArgs(args Args) (*userapi.CacophonyUserAPI, string, error) {
 
 	if args.TestPrefix {
 		saltPrefix = testPrefix
+	}
+	if args.NoPrefix {
+		saltPrefix = ""
 	}
 	if args.User != "" {
 		username = args.User
