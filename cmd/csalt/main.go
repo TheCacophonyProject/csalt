@@ -109,7 +109,7 @@ type Args struct {
 	TestServer bool        `arg:"--test" help:"Connect to the test api server"`
 	ProdServer bool        `arg:"--prod" help:"Connect to the prod api server"`
 	TestPrefix bool        `arg:"-t" help:"Add -test to salt names e.g. pi-test-xxx"`
-	NoPrefix     bool      `arg:"--no-prefix" help:"Dont add a prefix even if test"`
+	NoPrefix   bool        `arg:"--no-prefix" help:"Dont add a prefix even if test"`
 	User       string      `arg:"--user" help:"Username to authenticate with server"`
 	Debug      bool        `arg:"-d" help:"debug"`
 	Verbose    bool        `arg:"-v" help:"verbose"`
@@ -297,11 +297,39 @@ func apiFromArgs(args Args) (*userapi.CacophonyUserAPI, string, error) {
 	api := userapi.New(serverURL, username, token)
 	return api, saltPrefix, nil
 }
+func filterDevices(devices *userapi.DeviceResponse, groupFilters []string, devicesFilters []userapi.Device) error {
+	filteredList := make([]userapi.Device, 0, 10)
+	for _, device := range devices.Devices {
+		matched := false
+		for _, groupFilter := range groupFilters {
+			if groupFilter == device.GroupName {
+				matched = true
+				filteredList = append(filteredList, device)
+
+				break
+			}
+		}
+		if matched {
+			continue
+		}
+		for _, deviceFilter := range devicesFilters {
+			if deviceFilter.DeviceName == "" || deviceFilter.DeviceName == device.DeviceName {
+				if deviceFilter.GroupName == "" || deviceFilter.GroupName == device.GroupName {
+					matched = true
+					filteredList = append(filteredList, device)
+					break
+				}
+			}
+		}
+	}
+	devices.Devices = filteredList
+	return nil
+}
 
 func checkForDuplicates(devices *userapi.DeviceResponse) error {
 	nameMap := make(map[string][]userapi.Device)
 	duplicateNames := make([]string, 0, 1)
-	for _, device := range devices.NameMatches {
+	for _, device := range devices.Devices {
 		if _, ok := nameMap[device.DeviceName]; !ok {
 			nameMap[device.DeviceName] = []userapi.Device{device}
 		} else {
@@ -361,13 +389,7 @@ func showTranslatedDevices(devices *userapi.DeviceResponse, saltPrefix string) {
 	nodesToGroup := readNodeFile()
 	noNodeGroup := make([]userapi.Device, 0, 5)
 	fmt.Println("Devices found:")
-	for _, device := range devices.NameMatches {
-		if nodeGroups, found := nodesToGroup[saltPrefix+"-"+strconv.Itoa(device.SaltId)]; found {
-			fmt.Printf("%v:%v saltid: %v nodeGroup %v\n", device.GroupName, device.DeviceName, saltPrefix+"-"+strconv.Itoa(device.SaltId), nodeGroups)
-		} else {
-			noNodeGroup = append(noNodeGroup, device)
-		}
-	}
+
 	for _, device := range devices.Devices {
 		if nodeGroups, found := nodesToGroup[saltPrefix+"-"+strconv.Itoa(device.SaltId)]; found {
 			fmt.Printf("%v:%v saltid: %v nodeGroup %v\n", device.GroupName, device.DeviceName, saltPrefix+"-"+strconv.Itoa(device.SaltId), nodeGroups)
@@ -413,17 +435,20 @@ func runMain() error {
 			return err
 		}
 	}
-
-	devResp, err := api.TranslateNames(args.DeviceInfo.groups, args.DeviceInfo.devices)
+	devResp, err := api.GetDevices(args.DeviceInfo.groups, args.DeviceInfo.devices)
 	if userapi.IsAuthenticationError(err) {
 		err = authenticateUser(api)
 
 		if err != nil {
 			return err
 		}
-		devResp, err = api.TranslateNames(args.DeviceInfo.groups, args.DeviceInfo.devices)
+		devResp, err = api.GetDevices(args.DeviceInfo.groups, args.DeviceInfo.devices)
 
 	}
+	if err != nil {
+		return err
+	}
+	err = filterDevices(devResp, args.DeviceInfo.groups, args.DeviceInfo.devices)
 	if err != nil {
 		return err
 	}
@@ -432,7 +457,7 @@ func runMain() error {
 	if err != nil {
 		return err
 	}
-	allDevices := append(devResp.Devices, devResp.NameMatches...)
+	allDevices := devResp.Devices
 
 	if args.Show || args.Verbose {
 		idPrefix := getSaltPrefix(api.ServerURL(), saltPrefix)
