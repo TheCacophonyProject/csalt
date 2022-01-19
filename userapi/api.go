@@ -98,10 +98,9 @@ type Device struct {
 }
 
 type DeviceResponse struct {
-	Messages    []string `json:"messages"`
-	Devices     []Device `json:"devices"`
-	NameMatches []Device `json:"nameMatches"`
-	StatusCode  int      `json:"statusCode"`
+	Messages   []string `json:"messages"`
+	Devices    []Device `json:"devices"`
+	StatusCode int      `json:"statusCode"`
 }
 
 func (api *CacophonyUserAPI) User() string {
@@ -202,33 +201,19 @@ func (api *CacophonyUserAPI) SaveTemporaryToken(ttl string) error {
 	return nil
 }
 
-func (api *CacophonyUserAPI) TranslateNames(groups []string, devices []Device) (*DeviceResponse, error) {
+func (api *CacophonyUserAPI) GetDevices(groups []string, devices []Device) (*DeviceResponse, error) {
 	if api.token == "" {
 		return nil, &Error{
 			message:        "No Token Supplied",
 			authentication: true,
 		}
 	}
-	req, err := http.NewRequest("GET", joinURL(api.serverURL, apiBasePath, "/devices/query"), nil)
+	req, err := http.NewRequest("GET", joinURL(api.serverURL, apiBasePath, "/devices"), nil)
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Set("Authorization", api.token)
-	q := req.URL.Query()
-	if groups != nil {
-		json, _ := json.Marshal(groups)
-		q.Add("groups", string(json))
-	}
-	if devices != nil {
-		json, _ := json.Marshal(devices)
-		q.Add("devices", string(json))
-	}
-	req.URL.RawQuery = q.Encode()
-	if api.Debug {
-		fmt.Printf("TranslateNames request query:%v\n", q)
-	}
-
 	resp, err := api.httpClient.Do(req)
 	if err != nil {
 		return nil, err
